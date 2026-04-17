@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>המדריך המלא: כתיבת סיכום בורר</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8fafc;
+        }
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        textarea::-webkit-scrollbar { width: 8px; }
+        textarea::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px;}
+        textarea::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        textarea::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #4f46e5;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // --- Icons ---
+        const CheckCircle = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>;
+        const AlertCircle = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-orange-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>;
+
+        // --- Mock Evaluation Engine ---
+        const evaluateSummary = (text, expectedKeywords, originalText, titleAnswer) => {
+            let score = 25;
+            let feedback = { title: {text:'', pass:false}, content: {text:'', pass:false}, structure: {text:'', pass:false}, language: {text:'', pass:false}, richness: {text:'', pass:false} };
+            
+            // Title Check (סעיף א)
+            if (titleAnswer && titleAnswer.length > 20) {
+                feedback.title = {text: "בחרת/הצעת כותרת וסיפקת נימוק. מצוין! (זכור בבחינה לוודא שהנימוק מתבסס רק על הקטע).", pass: true};
+            } else {
+                score -= 3;
+                feedback.title = {text: "חסרה כותרת או שנימוק הכותרת קצר מדי. חובה להציע/לבחור כותרת ולנמק את הבחירה!", pass: false};
+            }
+
+            let words = text.trim().split(/\s+/).filter(w => w.length > 0);
+            let wordCount = words.length;
+
+            if (wordCount === 0) return null;
+
+            // 1. Content (8 points)
+            let foundKeywords = expectedKeywords.filter(kw => text.includes(kw));
+            if (foundKeywords.length >= 2) {
+                feedback.content = {text: "מצוין! התייחסת לנקודות המרכזיות שהתבקשו בהנחיה.", pass: true};
+            } else if (foundKeywords.length === 1) {
+                score -= 3;
+                feedback.content = {text: "התייחסת רק לחלק מהדרישות. בדוק שוב את ההנחיה והקפד לכלול את כל חלקי המטלה.", pass: false};
+            } else {
+                score -= 6;
+                feedback.content = {text: "חסר תוכן מהותי. נראה שהסיכום לא מתייחס ישירות למה שנדרש בהנחיה.", pass: false};
+            }
+
+            // 2. Structure (7 points)
+            const connectors = ['ראשית', 'בנוסף', 'כמו כן', 'לעומת זאת', 'לסיכום', 'לכן', 'מכיוון ש', 'גורם נוסף', 'פתרון', 'השפעה'];
+            let foundConnectors = connectors.filter(c => text.includes(c));
+            if (foundConnectors.length >= 2) {
+                feedback.structure = {text: `מבנה טוב. השתמשת יפה במילות קישור (${foundConnectors.join(', ')}).`, pass: true};
+            } else {
+                score -= 3;
+                feedback.structure = {text: "חסרות מילות קישור. כדי שהטקסט יהיה 'לכיד ומקושר', חובה להשתמש במילים כמו: ראשית, בנוסף, לעומת זאת.", pass: false};
+            }
+
+            // 3. Language & Length (5 points)
+            if (wordCount >= 25 && wordCount <= 65) {
+                feedback.language = {text: `אורך תקין (${wordCount} מילים). עמדת בדרישה של 3-5 שורות.`, pass: true};
+            } else {
+                score -= 3;
+                feedback.language = {text: `אורך בעייתי (${wordCount} מילים). הסיכום צריך להיות 3-5 שורות (כ-30-60 מילים).`, pass: false};
+            }
+
+            // 4. Richness & Aggressive Copy-Paste Check (5 points)
+            const cleanOriginal = originalText.replace(/<[^>]*>?/gm, '').replace(/[.,?!]/g, '');
+            let isCopied = false;
+            
+            // Checking for exact chunks of 5 consecutive words from the original text
+            for (let i = 0; i <= words.length - 5; i++) {
+                const chunk = words.slice(i, i + 5).join(' ').replace(/[.,?!]/g, '');
+                if (chunk.length > 15 && cleanOriginal.includes(chunk)) {
+                    isCopied = true;
+                    break;
+                }
+            }
+
+            if (isCopied) {
+                score -= 5;
+                feedback.richness = {text: "הערה חמורה: העתקת משפטים או רצפי מילים שלמים מהטקסט המקורי! בבגרות מורידים על כך נקודות רבות. עליך לשכתב אך ורק במילים שלך.", pass: false};
+            } else if (wordCount >= 25) {
+                feedback.richness = {text: "מצוין! ניסחת את הדברים במילים שלך והימנעת לחלוטין מהעתקה עיוורת (Copy-Paste) מהטקסט המקורי.", pass: true};
+            } else {
+                score -= 2;
+                feedback.richness = {text: "נסה להרחיב ולהשתמש באוצר מילים עשיר יותר. הקפד לשכתב במילים שלך.", pass: false};
+            }
+
+            if(score < 0) score = 0;
+            return { score, feedback, wordCount };
+        };
+
+        // --- Reusable Practice Component ---
+        const PracticeModule = ({ title, task, textContent, keywords, titleOptions }) => {
+            const [selectedTitle, setSelectedTitle] = useState('');
+            const [ownTitle, setOwnTitle] = useState('');
+            const [justification, setJustification] = useState('');
+            const [userText, setUserText] = useState('');
+            const [isChecking, setIsChecking] = useState(false);
+            const [result, setResult] = useState(null);
+
+            const handleCheck = () => {
+                if(userText.trim().length < 10) return;
+                setIsChecking(true);
+                setResult(null);
+                
+                const titleAnswer = titleOptions 
+                    ? `כותרת: ${selectedTitle} נימוק: ${justification}` 
+                    : `כותרת: ${ownTitle} נימוק: ${justification}`;
+
+                // Simulate AI processing time
+                setTimeout(() => {
+                    const evalResult = evaluateSummary(userText, keywords, textContent, titleAnswer);
+                    setResult(evalResult);
+                    setIsChecking(false);
+                }, 1500);
+            };
+
+            const wordCount = userText.trim().split(/\s+/).filter(w => w.length > 0).length;
+
+            return (
+                <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm mb-6">
+                    <h3 className="text-xl font-bold text-indigo-800 mb-4">{title}</h3>
+
+                    <div className="flex flex-col lg:flex-row gap-4">
+                        {/* Source Text */}
+                        <div className="flex-1 bg-gray-50 p-4 rounded border border-gray-200 h-auto min-h-[16rem] overflow-y-auto text-sm leading-relaxed text-gray-800" dangerouslySetInnerHTML={{__html: textContent}}>
+                        </div>
+
+                        {/* Writing Area */}
+                        <div className="flex-1 flex flex-col gap-4">
+                            {/* Part A: Title */}
+                            <div className="bg-indigo-50 border-r-4 border-indigo-500 p-3 rounded">
+                                <h4 className="font-bold text-indigo-900 text-sm mb-1">סעיף א': כותרת ונימוק</h4>
+                                <p className="text-xs text-indigo-800 mb-3 font-semibold">הכותרת מתייחסת לקטע הקצר בלבד.</p>
+                                
+                                {titleOptions ? (
+                                    <div className="mb-3">
+                                        <p className="text-xs font-bold mb-2">בחר כותרת אחת מתאימה:</p>
+                                        <div className="space-y-1">
+                                            {titleOptions.map((opt, i) => (
+                                                <label key={i} className="flex items-center gap-2 text-sm cursor-pointer">
+                                                    <input type="radio" name={`title_${title}`} value={opt} checked={selectedTitle === opt} onChange={(e) => setSelectedTitle(e.target.value)} className="text-indigo-600 focus:ring-indigo-500" />
+                                                    {opt}
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="mb-3">
+                                        <p className="text-xs font-bold mb-1">הצע כותרת משלך לקטע:</p>
+                                        <input type="text" className="w-full p-2 border border-indigo-200 rounded focus:ring-2 focus:ring-indigo-500 text-sm" placeholder="הכנס כותרת..." value={ownTitle} onChange={(e) => setOwnTitle(e.target.value)} />
+                                    </div>
+                                )}
+                                
+                                <p className="text-xs font-bold mb-1">נמק את בחירתך/הצעתך מתוך הקטע:</p>
+                                <textarea 
+                                    className="w-full p-2 border border-indigo-200 rounded focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none text-sm"
+                                    rows="2"
+                                    placeholder="כתוב את הנימוק שלך כאן..."
+                                    value={justification}
+                                    onChange={(e) => setJustification(e.target.value)}
+                                ></textarea>
+                            </div>
+
+                            {/* Part B: Summary */}
+                            <div className="bg-blue-50 border-r-4 border-blue-500 p-3 rounded flex-1 flex flex-col">
+                                <h4 className="font-bold text-blue-900 text-sm mb-1">סעיף ב': סיכום בורר (אסור להעתיק!)</h4>
+                                <p className="text-xs text-blue-800 mb-2 font-bold">מטלה: {task}</p>
+                                <textarea 
+                                    className="w-full flex-1 p-3 border border-blue-200 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none text-sm min-h-[6rem]"
+                                    placeholder="כתוב את הסיכום במילים שלך בלבד (3-5 שורות)..."
+                                    value={userText}
+                                    onChange={(e) => setUserText(e.target.value)}
+                                ></textarea>
+                                <div className="flex justify-between items-center mt-2">
+                                    <span className={`text-xs font-bold ${wordCount >= 25 && wordCount <= 65 ? 'text-green-600' : 'text-gray-500'}`}>
+                                        מילים: {wordCount} (יעד: 3-5 שורות)
+                                    </span>
+                                    <button 
+                                        onClick={handleCheck}
+                                        disabled={userText.trim().length < 10 || isChecking}
+                                        className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white px-4 py-2 rounded font-bold text-sm transition flex items-center gap-2"
+                                    >
+                                        {isChecking ? <div className="spinner border-2 w-4 h-4"></div> : 'בדיקה אוטומטית 🤖'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Results Area */}
+                    {result && (
+                        <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-lg fade-in">
+                            <div className="flex items-center gap-4 border-b pb-3 mb-3">
+                                <div className={`text-3xl font-black ${result.score >= 20 ? 'text-green-600' : result.score >= 15 ? 'text-orange-500' : 'text-red-600'}`}>
+                                    ציון: {result.score}/25
+                                </div>
+                                <div className="text-sm text-gray-600">
+                                    הבדיקה בוחנת את הכותרת והנימוק (סעיף א'), ואת מרכיבי הסיכום: תוכן, מבנה, תקינות ואי-העתקה (סעיף ב').
+                                </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                <div className="flex items-start gap-2 col-span-1 md:col-span-2 bg-indigo-100 p-2 rounded">
+                                    {result.feedback.title.pass ? <CheckCircle /> : <AlertCircle />}
+                                    <div><strong>סעיף א' (כותרת ונימוק):</strong> {result.feedback.title.text}</div>
+                                </div>
+                                <div className="flex items-start gap-2">
+                                    {result.feedback.content.pass ? <CheckCircle /> : <AlertCircle />}
+                                    <div><strong>תוכן (8 נק'):</strong> {result.feedback.content.text}</div>
+                                </div>
+                                <div className="flex items-start gap-2">
+                                    {result.feedback.structure.pass ? <CheckCircle /> : <AlertCircle />}
+                                    <div><strong>מבנה (7 נק'):</strong> {result.feedback.structure.text}</div>
+                                </div>
+                                <div className="flex items-start gap-2">
+                                    {result.feedback.language.pass ? <CheckCircle /> : <AlertCircle />}
+                                    <div><strong>לשון ואורך (5 נק'):</strong> {result.feedback.language.text}</div>
+                                </div>
+                                <div className="flex items-start gap-2">
+                                    {result.feedback.richness.pass ? <CheckCircle /> : <AlertCircle />}
+                                    <div><strong>עושר שפה ואי-העתקה (5 נק'):</strong> {result.feedback.richness.text}</div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [currentStep, setCurrentStep] = useState(0);
+            
+            const steps = [
+                "עמוד ראשי",
+                "1. מהי פסקה?",
+                "2. מהו סיכום בורר?",
+                "3. קריטריונים להערכה",
+                "4. שלבי העבודה",
+                "5. התנסות מודרכת",
+                "6. מאגר תרגול"
+            ];
+
+            const nextStep = () => { window.scrollTo(0,0); if (currentStep < steps.length - 1) setCurrentStep(currentStep + 1); };
+            const prevStep = () => { window.scrollTo(0,0); if (currentStep > 0) setCurrentStep(currentStep - 1); };
+
+            const finishLesson = () => {
+                window.scrollTo(0,0);
+                setCurrentStep(steps.length); // Move to the new "Finish" step
+            };
+
+            // Data for Step 6 (Using vocabulary from the image)
+            // Texts are expanded to be ~10-15 lines (~150-200 words)
+            const practiceTexts = [
+                {
+                    title: "טקסט 1: קניות מסך מול חוויה",
+                    task: "כתוב סיכום בורר בו תציג את ההבדלים בין הרגלי הצריכה כיום לעבר, ואת ההשפעות של שינוי זה.",
+                    keywords: ['צריכה', 'הבדלים', 'עבר', 'כיום', 'השפעות', 'חוויות', 'קניות'],
+                    content: `בעבר, אנשים מצאו <strong>נחמה</strong> רבה בקניית מוצרים חומריים וראו בכך סמל להצלחה ומעמד. הם נהגו לרכוש בגדי <strong>טקסטיל</strong> איכותיים, <strong>אריג</strong> יוקרתי לבית או <strong>חליפה</strong> מחויטת בעלת <strong>יוקרה</strong> שהעניקו להם תחושת ביטחון וסטטוס חברתי גבוה. <strong>לעומת זאת</strong>, כיום המגמה השתנתה לחלוטין. מתקיים <strong>סקר</strong> אחר סקר בקרב צעירים ברחבי העולם המעיד על שינוי משמעותי ועמוק בהרגלי הצריכה: הדור הצעיר מעדיף להוציא את כספו על <strong>חוויה מוחשית</strong>, על טיולים ארוכים ועל <strong>בילויים</strong> משותפים עם חברים, ולא על צבירת חפצים שמעלים אבק בארון. <br><br>כתוצאה מתפיסת עולם זו, ניתן לראות <strong>נהירה</strong> של המונים ל<strong>נתב"ג</strong> בכל סוף שבוע ובחגים במטרה לטוס ליעדים אקזוטיים, לצבור זיכרונות ולתעד את הרגעים ברשתות החברתיות. לשינוי התרבותי הזה יש השלכות נרחבות בשטח. מבחינה <strong>כלכלית</strong>, אנו רואים <strong>צמיחה</strong> אדירה בחברות התיירות, במלונאות ובתעופה שרושמות רווחי ענק חסרי תקדים מדי שנה. אך מנגד, בעלי חנויות הבגדים, הרשתות הקמעונאיות והקניונים חווים ירידה חדה במכירות ונאלצים להציע <strong>הנחות</strong> גדולות ומבצעים תכופים וחסרי תקדים כדי למשוך לקוחות לחנויות הפיזיות שלהם.`
+                },
+                {
+                    title: "טקסט 2: דור המסכים",
+                    task: "סכם את ההשפעות השליליות של זמן מסך ממושך על בני נוער, ואת הפתרונות המוצעים בטקסט.",
+                    keywords: ['מסך', 'השפעות', 'שליליות', 'פתרונות', 'לפתור', 'מיומנות'],
+                    content: `בני נוער רבים יושבים כיום מול <strong>מסך המחשב</strong> או הטלפון הנייד שעות ארוכות מדי יום ב<strong>חוסר מעש</strong> מוחלט, תוך ויתור על פעילויות אחרות. לעיתים קרובות הם פשוט <strong>משוטטים</strong> ברשתות החברתיות, צופים בסרטונים קצרים או משחקים במשחקי רשת בלי שום מטרה מוגדרת. התופעה הפכה כה נרחבת עד כי כל <strong>מומחית</strong> להתפתחות ילדים מציגה כיום <strong>דילמה</strong> קשה עמה מתמודדים ההורים: מצד אחד, הטכנולוגיה חשובה ללמידה ולהשתלבות בעולם המודרני, אך מנגד יש <strong>סתירה</strong> כיוון שהיא גורמת ל<strong>הסלמה</strong> מהירה בבעיות קשב וריכוז ולריחוק חברתי ממשי מבני גילם.<br><br>בשל שעות המסך הארוכות הללו, קיימת <strong>החמצה</strong> אדירה של חוויות הילדות בחוץ, כגון משחקי ספורט ופעילות בתנועות נוער, מה שמוביל לחוסר יכולת לפתח <strong>מיומנות</strong> חברתית בסיסית של שיחה פנים אל פנים וקריאת שפת גוף. כדי למנוע מצב מסוכן שבו בני נוער ימשיכו <strong>להשתמט</strong> ממפגשים חברתיים ומשפחתיים, פסיכולוגים ואנשי חינוך ממליצים להורים לנקוט פעולה אקטיבית. הפתרון המרכזי המוצע הוא להגביל את שעות המסך היומיות באופן <strong>מתוכנן</strong> מראש יחד עם הילד, ולעודד רישום לחוגים פיזיים, פעילויות ספורט ותחביבים אליהם הילדים יכולים לצאת <strong>תכף ומיד</strong> לאחר שעות בית הספר, ובכך להחזיר את האיזון לחייהם.`
+                },
+                {
+                    title: "טקסט 3: חופשות אקסטרים",
+                    task: "כתוב סיכום בורר בו תציג את הסיבות ליציאה לחופשות אקסטרים, ואת הסכנות הכרוכות בכך.",
+                    keywords: ['סיבות', 'מדוע', 'אקסטרים', 'סכנות', 'פחד'],
+                    content: `בעידן המודרני לא כל האנשים מחפשים חופשה שקטה ורגועה בחוף הים או בבית מלון מפנק. בשנים האחרונות הפכה כל <strong>אטרקציה</strong> מסוכנת ורווית אדרנלין ליעד מבוקש מאוד בקרב תיירים צעירים ומבוגרים מכל העולם, ויש <strong>נהירה</strong> המונית של מטיילים לאזור <strong>הררי</strong> תלול וקפוא כדי לטפס לפסגות מסוכנות, או לפארקים הרפתקניים בעלי <strong>מגלשות מים</strong> במידה <strong>ענקית</strong> שמספקות ריגוש קיצוני ומהירות מסחררת.<br><br>הסיבה המרכזית לכך היא הרצון העז לחוש אדרנלין, להתנתק מהלחצים של העבודה ולשבור את השגרה המשעממת של חיי היומיום. למרות ה<strong>הלם</strong> הראשוני שחווים הקופצים והפחד העמוק מ<strong>חוסר ודאות</strong> רגע לפני הקפיצה מגובה רב או תחילת המסלול, אנשים נהנים מתחושת ה<strong>גאווה</strong>, תחושת המסוגלות והסיפוק העצמי העצום כשהם מצליחים לסיים מסלול מורכב ולהתגבר על הפחדים שלהם. עם זאת, אי אפשר בשום אופן להתעלם מהסכנות הרבות שכרוכות בתחום זה. עיסוק רציני בספורט אתגרי בחיק הטבע דורש <strong>זריזות</strong>, כושר גופני מצוין, ניסיון מקדים ויכולת תגובה מהירה למצבי חירום. טעות קטנה של חוסר תשומת לב, שינוי פתאומי במזג האוויר או ציוד שאינו תקין, עלולים להוביל לפציעות חמורות ביותר הדורשות חילוץ מורכב ויקר מאוד באמצעות מסוקים וצוותי הצלה מיומנים הפועלים בתנאי שטח קשים.`
+                },
+                {
+                    title: "טקסט 4: שריפות יער",
+                    task: "סכם את הגורמים לשריפות יער בישראל ואת הדרכים להתמודד עמן לאחר שפרצו.",
+                    keywords: ['גורמים', 'סיבות', 'שריפה', 'דרכים', 'התמודדות', 'פתרונות'],
+                    content: `במהלך עונת הקיץ החמה והיבשה המאפיינת את מדינת ישראל, בה הטמפרטורות מטפסות לשיאים חדשים, כל חוסר זהירות קטן של מטיילים עלול לגרום ל<strong>דלקה</strong> הרסנית, מהירה וגדולה שקשה מאוד להשתלט עליה. לעיתים, מקור האש הוא פשוט מדורה של מטיילים שלא כובתה כראוי על ידי אדם <strong>גס רוח</strong> וחסר אחריות שלא וידא כי הגחלים כבו, או אפילו סיגריה קטנה בוערת המושלכת ל<strong>קרקע</strong> מכוסה בעשבים יבשים וקוצים. אלה הם לרוב הגורמים הישירים לאסון אקולוגי חמור שמכלה יערות שלמים, פוגע בבתי גידול של בעלי חיים ומסכן באופן ממשי חיי אדם ורכוש.<br><br>כאשר פורצת שריפת חורש, כוחות הכיבוי וההצלה יודעים שיש לפעול <strong>תכף ומיד</strong> ללא שום דיחוי, שכן האש מתפשטת במהירות עצומה בחסות הרוחות. הם נדרשים קודם כל <strong>למלט</strong> את התושבים מאזור הסכנה המיידית ולפנות שכונות שלמות, במיוחד כאשר חלה <strong>הסלמה</strong> פתאומית בעוצמת האש וכיוון הרוח משתנה לפתע ומאיים על בתי מגורים. הכבאים, יחד עם טייסות הכיבוי, פועלים בשטח לפי מערך <strong>מתוכנן</strong> מראש ומתואם היטב. לאחר שהאש כובתה לחלוטין ואין סכנה להתחדשותה, יש צורך ב<strong>אוורור</strong> ממושך ויסודי של הבתים מנזקי העשן הכבד והרעיל שחדר אליהם. במקביל, הרשויות מתחילות בבניית תוכנית ארוכת טווח של נטיעה מחודשת של עצים לשם שיקום ה<strong>קרקע</strong> השרופה והחזרת הטבע לקדמותו.`
+                }
+            ];
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    {/* Header */}
+                    <header className="bg-indigo-700 text-white p-6 shadow-md text-center sticky top-0 z-10 relative">
+                        <h1 className="text-2xl md:text-3xl font-bold mb-1">בגרות בעברית (שאלון 014271)</h1>
+                        <h2 className="text-lg md:text-xl text-indigo-200">פרק שני: סיכום בורר - יחידת לימוד ויישום</h2>
+                    </header>
+
+                    {/* Progress Bar */}
+                    <div className="max-w-5xl mx-auto mt-6 px-4 w-full">
+                        <div className="flex items-center justify-between mb-2">
+                            {steps.map((step, index) => (
+                                <div key={index} className={`text-xs md:text-sm font-semibold hidden md:block ${index === currentStep ? 'text-indigo-700 border-b-2 border-indigo-700' : index < currentStep ? 'text-indigo-400' : 'text-gray-400'}`}>
+                                    {step}
+                                </div>
+                            ))}
+                            <div className="md:hidden text-center w-full font-bold text-indigo-700">
+                                {currentStep < steps.length ? `שלב ${currentStep + 1} מתוך ${steps.length}: ${steps[currentStep]}` : 'סיום'}
+                            </div>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div className="bg-indigo-600 h-2 rounded-full transition-all duration-500 ease-in-out" style={{ width: `${((currentStep) / (steps.length)) * 100}%` }}></div>
+                        </div>
+                    </div>
+
+                    {/* Main Content Area */}
+                    <main className="max-w-5xl mx-auto mt-6 px-4 flex-1 w-full pb-8">
+                        
+                        {/* --- Step 0: Home Page --- */}
+                        {currentStep === 0 && (
+                            <div className="bg-white rounded-xl shadow p-6 md:p-10 fade-in min-h-[400px] text-center border-t-4 border-indigo-600">
+                                <div className="flex flex-col md:flex-row items-center justify-center gap-6 mb-4">
+                                    <h2 className="text-3xl md:text-4xl font-bold text-indigo-800 text-center md:text-right">
+                                        ברוכים הבאים ליחידת הלימוד:<br/>כתיבת סיכום בורר
+                                    </h2>
+                                    <img src="https://www.dropbox.com/scl/fi/n99ekuziwuwo0gw6ayyz4/1c81ae1c-2456-410c-999a-36e725a9728b.png?rlkey=63ta8ngn55sdabt6mfdbyt10z&st=70tr43s5&raw=1" alt="סמל בית הספר" className="h-28 md:h-32 object-contain bg-white rounded-lg p-2 border border-gray-100 shadow-sm" />
+                                </div>
+                                <h3 className="text-xl md:text-2xl font-bold text-gray-800 mb-8 mt-4 bg-indigo-50 inline-block px-6 py-2 rounded-full border border-indigo-100">
+                                    הכינה המורה חנאן חאג' מוחמד , בי"ס מקיף כאוכב .
+                                </h3>
+                                
+                                <div className="text-right text-lg text-gray-700 space-y-4 max-w-3xl mx-auto p-6 rounded-lg">
+                                    <p>תלמידים יקרים, ברוכים הבאים ליחידת הלימוד האינטראקטיבית!</p>
+                                    <p>יחידה זו פותחה במיוחד כדי להכין אתכם בצורה הטובה והיעילה ביותר ל<strong>פרק השני בבחינת הבגרות בעברית (שאלון 014271)</strong> - משימת הסיכום הבורר, המהווה 25 נקודות מהציון הכולל בבחינה.</p>
+                                    
+                                    <div className="bg-blue-50 p-5 rounded-lg border border-blue-100 mt-6">
+                                        <h4 className="font-bold text-indigo-900 text-xl mb-3 flex items-center gap-2">
+                                            <span className="text-2xl">🎯</span> מה מחכה לכם ביחידה?
+                                        </h4>
+                                        <ul className="list-disc list-inside space-y-2 pr-2">
+                                            <li>נלמד את הבסיס לכתיבה נכונה: מהי פסקה ואיך היא בנויה.</li>
+                                            <li>נכיר את מבנה השאלה המעודכן בבגרות: <strong>סעיף א' (כותרת ונימוק) וסעיף ב' (סיכום בורר ללא העתקות)</strong>.</li>
+                                            <li>נכיר לעומק את מחוון ההערכה - איך הבוחנים בודקים את הסיכום שלכם.</li>
+                                            <li>נלמד שיטת עבודה מסודרת וברורה (שלב-אחר-שלב) להתמודדות עם טקסט המקור.</li>
+                                            <li><strong>מאגר תרגול חכם:</strong> נתרגל כתיבה בעזרת טקסטים ארוכים (כ-10-15 שורות) המשלבים אוצר מילים מהבגרות, ונסכם אותם לכדי 3-5 שורות.</li>
+                                        </ul>
+                                    </div>
+                                    
+                                    <div className="bg-orange-50 p-4 rounded-lg border border-orange-100 mt-4 text-center">
+                                        <p className="font-bold text-orange-800 text-lg">✨ בונוס מיוחד! ✨</p>
+                                        <p className="text-gray-800">ביחידה זו משולבת מערכת בינה מלאכותית (AI) שתבדוק את הסיכומים שלכם, תעניק לכם ציון ומשוב מפורט, <strong>ואף תזהיר אתכם אם תעתיקו משפטים מהטקסט המקורי!</strong></p>
+                                    </div>
+                                    
+                                    <div className="text-center mt-10">
+                                        <button onClick={nextStep} className="bg-indigo-600 text-white px-10 py-4 rounded-full font-bold text-xl hover:bg-indigo-700 transition shadow-lg flex items-center justify-center gap-3 mx-auto animate-pulse">
+                                            בואו נתחיל! 🚀
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* --- Step 1 --- */}
+                        {currentStep === 1 && (
+                            <div className="bg-white rounded-xl shadow p-6 md:p-8 fade-in min-h-[400px]">
+                                <h2 className="text-2xl font-bold text-indigo-800 mb-4 border-b pb-2">שלב 1: הבסיס - מהי פסקה?</h2>
+                                <p className="mb-4">כדי לכתוב סיכום ברור, נתחיל מהבסיס: <span className="font-bold">פסקה</span>. פסקה היא קבוצת משפטים שמדברת על נושא מרכזי אחד. נוהגים להשוות אותה להמבורגר.</p>
+                                <div className="bg-orange-50 p-6 rounded-lg mb-6 border border-orange-200">
+                                    <ul className="space-y-4">
+                                        <li className="flex gap-3"><span className="text-2xl">🍔</span><div><strong>הלחמניה העליונה (משפט מפתח):</strong> המשפט הראשון שמציג את הרעיון.</div></li>
+                                        <li className="flex gap-3"><span className="text-2xl">🥬</span><div><strong>הבשר והירקות (משפטים תומכים):</strong> מסבירים, מפרטים, ומתחברים בעזרת מילות קישור.</div></li>
+                                        <li className="flex gap-3"><span className="text-2xl">🍔</span><div><strong>הלחמניה התחתונה (משפט סיום):</strong> מסכם את הפסקה (רשות).</div></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* --- Step 2 --- */}
+                        {currentStep === 2 && (
+                            <div className="bg-white rounded-xl shadow p-6 md:p-8 fade-in min-h-[400px]">
+                                <h2 className="text-2xl font-bold text-indigo-800 mb-4 border-b pb-2">שלב 2: מהו סיכום "בורר" ומבנה השאלה החדש</h2>
+                                <p className="mb-4">"לברור" משמעותו לבחור. בסיכום בורר איננו מסכמים את כל הטקסט, אלא <strong>בוחרים רק את המידע שביקשו בהנחיה</strong>.</p>
+                                
+                                <div className="bg-orange-50 border border-orange-200 p-4 rounded-lg mb-6">
+                                    <h4 className="font-bold text-orange-800 flex items-center gap-2 mb-2"><AlertCircle /> עדכון חשוב! מבנה השאלה בבחינה:</h4>
+                                    <p className="text-sm text-gray-800 mb-2 font-semibold">פרק הסיכום מחולק כעת לשני סעיפים חובה:</p>
+                                    <ul className="list-disc list-inside text-gray-800 space-y-2 text-sm">
+                                        <li><strong>סעיף א' - כותרת ונימוק:</strong> יהיו שתי אפשרויות למענה על השאלה: אפשרות אחת היא שיופיעו כמה אופציות לכותרת, והתלמידים יתבקשו לבחור כותרת אחת מתאימה ולנמק את בחירתם. אפשרות שנייה היא שהתלמידים יתבקשו לכתוב כותרת משלהם ולנמק את הצעתם. <strong>חשוב להדגיש שהכותרת מתייחסת לקטע הקצר בלבד!</strong></li>
+                                        <li><strong>סעיף ב' - סיכום בורר:</strong> התלמיד יתבקש לסכם לפי הנחיות (נקודות/נושאים) מסוימים בטקסט הקצר. בעת הבדיקה נבדוק את המבנה, התוכן ואת כלל הפרמטרים. <strong>אסור לתלמיד להעתיק בכלל, ועל כך ירדו נקודות מהטקסט הקצר!</strong> הסיכום נכתב אך ורק במילים שלו בין 3-5 שורות.</li>
+                                    </ul>
+                                </div>
+
+                                <div className="flex flex-col md:flex-row gap-4">
+                                    <div className="bg-blue-50 p-5 rounded-lg flex-1 border border-blue-200">
+                                        <h3 className="font-bold text-blue-900 mb-2">✅ מה נכנס לסיכום?</h3>
+                                        <ul className="list-disc list-inside space-y-1 text-gray-700">
+                                            <li>רק מה שביקשו בהנחיה (למשל: סיבות, פתרונות).</li>
+                                            <li>רעיונות מרכזיים בלבד.</li>
+                                            <li>ניסוח במילים שלנו.</li>
+                                        </ul>
+                                    </div>
+                                    <div className="bg-red-50 p-5 rounded-lg flex-1 border border-red-200">
+                                        <h3 className="font-bold text-red-900 mb-2">❌ מה לא נכנס לסיכום?</h3>
+                                        <ul className="list-disc list-inside space-y-1 text-gray-700">
+                                            <li>דעה אישית (אסור!).</li>
+                                            <li>דוגמאות, שמות וציטוטים (למעט חריגים).</li>
+                                            <li>פרטים שוליים שלא קשורים להנחיה.</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* --- Step 3 --- */}
+                        {currentStep === 3 && (
+                            <div className="bg-white rounded-xl shadow p-6 md:p-8 fade-in min-h-[400px]">
+                                <h2 className="text-2xl font-bold text-indigo-800 mb-4 border-b pb-2">שלב 3: מחוון ההערכה (25 נקודות)</h2>
+                                <p className="mb-4">הסיכום שלך בבגרות ייבדק על פי 4 פרמטרים. חשוב לשים לב לכולם:</p>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                                    <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
+                                        <div className="text-3xl mb-2">📝</div>
+                                        <div className="font-bold text-indigo-900">תוכן</div>
+                                        <div className="text-xs mt-1">התייחסות לכל דרישות ההנחיה ללא תוספות מיותרות.</div>
+                                    </div>
+                                    <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
+                                        <div className="text-3xl mb-2">🔗</div>
+                                        <div className="font-bold text-indigo-900">מבנה</div>
+                                        <div className="text-xs mt-1">טקסט לכיד, שימוש נכון במילות קישור, משפט פתיחה.</div>
+                                    </div>
+                                    <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
+                                        <div className="text-3xl mb-2">🎯</div>
+                                        <div className="font-bold text-indigo-900">תקינות לשון</div>
+                                        <div className="text-xs mt-1">ללא שגיאות כתיב, פיסוק נכון (נקודה בסוף משפט), הקפדה על אורך קצר ותמציתי (3-5 שורות בלבד).</div>
+                                    </div>
+                                    <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
+                                        <div className="text-3xl mb-2">📚</div>
+                                        <div className="font-bold text-indigo-900">עושר שפה</div>
+                                        <div className="text-xs mt-1">שכתוב במילים שלך, אוצר מילים מגוון, הימנעות מוחלטת מהעתקה עיוורת מהקטע.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* --- Step 4 --- */}
+                        {currentStep === 4 && (
+                            <div className="bg-white rounded-xl shadow p-6 md:p-8 fade-in min-h-[400px]">
+                                <h2 className="text-2xl font-bold text-indigo-800 mb-4 border-b pb-2">שלב 4: שיטת העבודה בזמן המבחן</h2>
+                                <div className="space-y-4">
+                                    <div className="flex items-start gap-4 p-3 bg-gray-50 rounded">
+                                        <div className="bg-indigo-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold shrink-0">1</div>
+                                        <div><strong>סעיף א' - בחירת כותרת:</strong> קוראים את הקטע הארוך (כ-10-15 שורות), בוחרים או מציעים כותרת מתאימה, וכותבים נימוק המבוסס על הטקסט שקראנו.</div>
+                                    </div>
+                                    <div className="flex items-start gap-4 p-3 bg-gray-50 rounded">
+                                        <div className="bg-indigo-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold shrink-0">2</div>
+                                        <div><strong>סעיף ב' - איתור וסימון:</strong> קוראים את הנחיית הסיכום. ממרקרים בטקסט רק משפטים שעונים במדויק על ההנחיה. מסננים את כל הדוגמאות והרעיונות הצדדיים.</div>
+                                    </div>
+                                    <div className="flex items-start gap-4 p-3 bg-gray-50 rounded">
+                                        <div className="bg-indigo-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold shrink-0">3</div>
+                                        <div><strong>כתיבת הסיכום (ללא העתקה!):</strong> מחברים את המשפטים שסימנו בעזרת מילות קישור. חובה לכתוב במילים שלכם ולשנות את הניסוח המקורי כדי לא לאבד נקודות על העתקה.</div>
+                                    </div>
+                                    <div className="flex items-start gap-4 p-3 bg-gray-50 rounded">
+                                        <div className="bg-indigo-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold shrink-0">4</div>
+                                        <div><strong>בקרה:</strong> מוודאים שהסיכום קצר וקולע למטרה (בין 3 ל-5 שורות) ושמרכיבי התוכן, המבנה והלשון תקינים.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* --- Step 5 (Practice with Auto Check) --- */}
+                        {currentStep === 5 && (
+                            <div className="fade-in">
+                                <h2 className="text-2xl font-bold text-indigo-800 mb-2">שלב 5: התנסות מודרכת עם בדיקת AI</h2>
+                                <p className="mb-4 text-gray-700">קרא את הטקסט הארוך (כ-10-15 שורות) ואת ההנחיה, כתוב את הסיכום הקצר (3-5 שורות) ולחץ על "בדיקה אוטומטית" לקבלת משוב וציון.</p>
+                                
+                                <PracticeModule 
+                                    title="בעיית בזבוז המזון"
+                                    titleOptions={["השלכות בזבוז המזון העולמי", "רשתות השיווק זורקות מזון", "כיצד מצילים את האקלים?"]}
+                                    task="כתוב סיכום בורר בו תציג את הגורמים לבזבוז מזון ואת הדרכים לצמצם תופעה זו."
+                                    keywords={['גורמים', 'סיבות', 'רשתות', 'מבצעים', 'אחסון', 'דרכים', 'לצמצם', 'תכנון', 'תרומה', 'הסברה']}
+                                    textContent={`מדי שנה, כשליש מכלל המזון המיוצר בעולם מושלך לפח, למרות שישנם מיליוני אנשים ברחבי הגלובוס הסובלים מרעב ומחוסר ביטחון תזונתי. תופעה עולמית חמורה זו נובעת ממספר גורמים מרכזיים לאורך שרשרת תהליך הייצור והצריכה. ראשית, רשתות השיווק הגדולות נוטות לזרוק פירות וירקות טריים שאינם נראים "מושלמים" מבחינה אסתטית, גם אם הם טריים וראויים לחלוטין למאכל אדם, רק בגלל פגם קטן בצורתם. בנוסף לכך, צרכנים רבים מתפתים וקונים כמויות עודפות של מזון בגלל מבצעים אגרסיביים בחנויות וברשתות הגדולות, ובסופו של דבר נאלצים לזרוק אותו לפח כאשר פג תוקפו. חוסר מודעות לאחסון נכון במקרר הביתי או במזווה מהווה גם הוא גורם משמעותי לפחת המזון.<br><br>ההשלכות של בזבוז זה הן הרסניות ביותר ופוגעות קשות בסביבה בגלל פליטת גזי חממה מן המזון הנרקב במטמנות, וכן בשל בזבוז משאבי מים וקרקע ששימשו לגידולו. כדי להתמודד עם הבעיה ביעילות, ארגונים ירוקים מציעים מספר פתרונות מעשיים. קודם כל, יש לעודד צרכנים לתכנן מראש את הקניות בעזרת רשימה מסודרת ולא לקנות מתוך דחף רגעי. כמו כן, חשוב לקדם חקיקה ממשלתית ברורה שתחייב רשתות שיווק לתרום מזון עודף וראוי למאכל לעמותות המסייעות לנזקקים במקום להשליכו להשמדה. לבסוף, חובה להרחיב את ההסברה בציבור על שיטות לאחסון נכון במקרר הביתי ועל הבנת ההבדל בין תאריכי התפוגה השונים המודפסים על האריזות.`}
+                                />
+                            </div>
+                        )}
+
+                        {/* --- Step 6 (More Practice texts with Vocabulary) --- */}
+                        {currentStep === 6 && (
+                            <div className="fade-in">
+                                <h2 className="text-2xl font-bold text-indigo-800 mb-2">שלב 6: מאגר תרגול (העשרת אוצר מילים)</h2>
+                                <p className="mb-4 text-gray-700">
+                                    הטקסטים הבאים תואמים לדרישות הבחינה – טקסטים ארוכים ומפורטים של כ-10 עד 15 שורות המשלבים מילים חדשות מתוך מאגר אוצר המילים לבגרות (המילים מודגשות בטקסט). 
+                                    בחר טקסט, קרא אותו היטב וסנן את המידע כדי לכתוב סיכום בורר מדויק של <strong>3-5 שורות בלבד</strong>, והיעזר בבדיקה האוטומטית!
+                                </p>
+                                
+                                <div className="space-y-8">
+                                    <PracticeModule 
+                                        title={practiceTexts[0].title}
+                                        task={practiceTexts[0].task}
+                                        keywords={practiceTexts[0].keywords}
+                                        textContent={practiceTexts[0].content}
+                                        titleOptions={["המעבר מקניות לחוויה", "קריסת רשתות האופנה", "הכלכלה התיירותית"]}
+                                    />
+                                    <PracticeModule 
+                                        title={practiceTexts[1].title}
+                                        task={practiceTexts[1].task}
+                                        keywords={practiceTexts[1].keywords}
+                                        textContent={practiceTexts[1].content}
+                                        // No titleOptions passed here -> it will display "Write your own title"
+                                    />
+                                    <PracticeModule 
+                                        title={practiceTexts[2].title}
+                                        task={practiceTexts[2].task}
+                                        keywords={practiceTexts[2].keywords}
+                                        textContent={practiceTexts[2].content}
+                                        titleOptions={["חיפוש האדרנלין: סיבות וסכנות", "פארקי מים בעולם", "כיצד מחלצים מטיילים?"]}
+                                    />
+                                    <PracticeModule 
+                                        title={practiceTexts[3].title}
+                                        task={practiceTexts[3].task}
+                                        keywords={practiceTexts[3].keywords}
+                                        textContent={practiceTexts[3].content}
+                                        // No titleOptions passed here -> it will display "Write your own title"
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* --- Step 7 (Finish Page) --- */}
+                        {currentStep === steps.length && (
+                            <div className="bg-white rounded-xl shadow p-6 md:p-10 fade-in min-h-[400px] text-center border-t-4 border-green-500">
+                                <div className="text-6xl mb-4 animate-bounce">🎓</div>
+                                <h2 className="text-3xl md:text-4xl font-bold text-green-700 mb-4">כל הכבוד! סיימת את יחידת הלימוד בהצלחה!</h2>
+                                
+                                <div className="text-lg text-gray-700 space-y-6 max-w-3xl mx-auto p-6 rounded-lg bg-green-50 border border-green-200">
+                                    <p className="font-bold text-xl text-green-800">מה למדנו ומה השגנו ביחידה זו?</p>
+                                    
+                                    <ul className="text-right list-none space-y-3">
+                                        <li className="flex items-start gap-2">
+                                            <CheckCircle /> <span><strong>הבנו את הבסיס:</strong> למדנו מהי פסקה, איך היא בנויה, ומה ההבדל בין עיקר לטפל.</span>
+                                        </li>
+                                        <li className="flex items-start gap-2">
+                                            <CheckCircle /> <span><strong>הכרנו את מבנה הבחינה החדש:</strong> אנחנו יודעים כעת להתמודד עם שני הסעיפים: כותרת ונימוק (סעיף א'), וסיכום בורר ממוקד (סעיף ב').</span>
+                                        </li>
+                                        <li className="flex items-start gap-2">
+                                            <CheckCircle /> <span><strong>פיצחנו את מחוון ההערכה:</strong> אנחנו מבינים בדיוק איך הבוחנים יעריכו אותנו - תוכן, מבנה (מילות קישור), תקינות לשון ועושר שפה.</span>
+                                        </li>
+                                        <li className="flex items-start gap-2">
+                                            <CheckCircle /> <span><strong>רכשנו שיטת עבודה מנצחת:</strong> למדנו למרקר, לסנן מידע לא רלוונטי, ולכתוב סיכום קצר וקולע של 3-5 שורות.</span>
+                                        </li>
+                                        <li className="flex items-start gap-2">
+                                            <CheckCircle /> <span><strong>התגברנו על מלכודת ההעתקות:</strong> הפנמנו את החשיבות הקריטית של כתיבה במילים שלנו והימנעות מהעתקה עיוורת (Copy-Paste) כדי לשמור על הנקודות היקרות.</span>
+                                        </li>
+                                         <li className="flex items-start gap-2">
+                                            <CheckCircle /> <span><strong>העשרנו את אוצר המילים:</strong> תרגלנו טקסטים שחשפו אותנו למילים חדשות וחשובות לבגרות.</span>
+                                        </li>
+                                    </ul>
+                                    
+                                    <div className="mt-8 pt-6 border-t border-green-300">
+                                        <p className="text-xl font-bold text-indigo-800 mb-2">תלמידים יקרים,</p>
+                                        <p>ההשקעה שלכם והתרגול הם המפתח להצלחה! אתם מצוידים כעת בכל הכלים הדרושים כדי להוציא את הציון המקסימלי (25 נקודות) בפרק הסיכום.</p>
+                                        <p className="font-bold text-2xl text-green-700 mt-4">אני גאה בכם מאוד ומאמינה ביכולות שלכם! בהצלחה בבגרות!</p>
+                                    </div>
+                                </div>
+                                
+                                <div className="mt-8">
+                                    <button onClick={() => setCurrentStep(0)} className="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg font-bold hover:bg-gray-200 transition border border-gray-300">
+                                        חזרה לעמוד הראשי
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Navigation Buttons (Except Home Page and Finish Page) */}
+                        {currentStep > 0 && currentStep < steps.length && (
+                            <div className="flex justify-between mt-8 pt-4 border-t border-gray-200">
+                                <button 
+                                    onClick={prevStep} 
+                                    disabled={currentStep === 0}
+                                    className={`px-6 py-2 rounded-lg font-bold transition-colors ${currentStep === 0 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white text-indigo-600 border border-indigo-600 hover:bg-indigo-50 shadow-sm'}`}
+                                >
+                                    ← הקודם
+                                </button>
+                                
+                                {currentStep === steps.length - 1 ? (
+                                    <button 
+                                        onClick={finishLesson} 
+                                        className="bg-green-600 text-white px-8 py-2 rounded-lg font-bold hover:bg-green-700 shadow-md transition-colors animate-pulse"
+                                    >
+                                        סיום היחידה 🎉
+                                    </button>
+                                ) : (
+                                    <button 
+                                        onClick={nextStep} 
+                                        disabled={currentStep === steps.length - 1}
+                                        className={`px-6 py-2 rounded-lg font-bold transition-colors ${currentStep === steps.length - 1 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow'}`}
+                                    >
+                                        הבא →
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </main>
+
+                    {/* Global Footer (Visible on all pages) */}
+                    <footer className="w-full text-center py-5 mt-auto bg-gray-100 text-gray-600 text-sm font-semibold border-t border-gray-200">
+                        הכינה המורה חנאן חאג' מוחמד , בי"ס מקיף כאוכב
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
